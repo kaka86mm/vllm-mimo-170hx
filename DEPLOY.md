@@ -162,6 +162,26 @@ Reference numbers (acceptance run, mnbt 1024):
 | HTTP 400 on audio input | OpenAI `input_audio` shape | `audio_url` + wav payload |
 | engine hangs after LMCache connector init | transfer-mode mismatch (`cudaErrorMapBufferObjectFailed` / missing engine-driven handler) | see `launch-omni-lmc.sh` header for the working combo; simplest: don't enable LMCache until SWA storage is fixed |
 
+## Known issue: color perception is broken in this build (affects images AND video)
+
+Pure-color probes return wrong colors: a solid red image is described as
+white/blue/grey; a solid red video as white. Structure survives (the
+testsrc countdown digits, shapes, gradients' direction are read
+correctly) - chroma is systematically corrupted.
+
+Ruled out by measurement: checkpoint weights (visual.* tensors are
+byte-identical between the official and ProCreations checkpoints),
+preprocessing input (an in-processor probe receives clean pure-red
+RGB pixels), and every serving knob tuned in this repo. The corruption
+is downstream of preprocessing in the visual forward path of this
+vllm-backport build (temporal patch packing / channel order are prime
+suspects - the ViT uses a Conv3D patch embed [1280, 3, 2, 16, 16]
+taking 2 frames per patch).
+
+Impact: any color-dependent vision task returns confident garbage;
+OCR/layout/shape tasks look fine; text, audio, tool calls unaffected.
+Until fixed, treat color answers from vision inputs as unreliable.
+
 ## 9. Ops
 
 - Container is `--restart unless-stopped` — it self-heals; `./launch-omni.sh` for config changes.
