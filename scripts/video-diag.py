@@ -1,5 +1,6 @@
 import base64, json, urllib.request
-BASE = "http://127.0.0.1:8099"
+import os
+BASE = os.environ.get("BASE", f"http://127.0.0.1:{os.environ.get('PORT', '8099')}")
 b64 = lambda p: base64.b64encode(open(p, "rb").read()).decode()
 
 def go(content, label, extra=None):

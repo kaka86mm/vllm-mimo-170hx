@@ -1,5 +1,6 @@
 import json, time, urllib.request
-BASE = "http://127.0.0.1:8099"
+import os
+BASE = os.environ.get("BASE", f"http://127.0.0.1:{os.environ.get('PORT', '8099')}")
 
 def go(msg, mt, tools=None):
     body = {"model": "mimo26", "messages": [{"role": "user", "content": msg}],

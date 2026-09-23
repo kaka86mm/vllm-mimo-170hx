@@ -1,5 +1,6 @@
 import base64, json, urllib.request
-BASE = "http://127.0.0.1:8099"
+import os
+BASE = os.environ.get("BASE", f"http://127.0.0.1:{os.environ.get('PORT', '8099')}")
 def b64(p): return base64.b64encode(open(p,"rb").read()).decode()
 def chat(content, max_tokens, tag):
     req = urllib.request.Request(BASE+"/v1/chat/completions",

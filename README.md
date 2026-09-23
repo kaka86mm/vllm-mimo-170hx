@@ -34,7 +34,11 @@ Fix: shrink `--max-num-batched-tokens`. The whole curve improved monotonically:
 
 Smaller chunks also *reduce* head-of-line blocking on the pipeline, so prefill got faster at every step. The real fix (per-stage sliding-window recycling) is proposed upstream in [wtdcode/vllm-backport#105](https://github.com/wtdcode/vllm-backport/issues/105).
 
-## Deployment layout
+## Deployment
+
+**Step-by-step guide: [DEPLOY.md](DEPLOY.md) — zero to serving, with verification checkpoints and a troubleshooting table of every error actually hit during bring-up.**
+
+## Layout
 
 - `scripts/launch-omni.sh` — the final config (the one all numbers above come from)
 - `scripts/launch-omni-lmc.sh` — LMCache CPU-offload variant (works, archived; see docs)

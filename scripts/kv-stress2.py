@@ -1,6 +1,7 @@
 import json, random, string, threading, time, urllib.request
 
-BASE = "http://127.0.0.1:8099"
+import os
+BASE = os.environ.get("BASE", f"http://127.0.0.1:{os.environ.get('PORT', '8099')}")
 BASE_SENT = "大模型推理系统的性能取决于显存带宽、算力和互联拓扑三者的平衡。"
 
 def uniq_filler(seed, reps):

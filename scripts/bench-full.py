@@ -1,5 +1,6 @@
 import json, threading, time, urllib.request
-BASE = "http://127.0.0.1:8099"
+import os
+BASE = os.environ.get("BASE", f"http://127.0.0.1:{os.environ.get('PORT', '8099')}")
 
 def req_stream(content, max_tokens, out, idx):
     t0 = time.time(); first = None; ntok = 0
