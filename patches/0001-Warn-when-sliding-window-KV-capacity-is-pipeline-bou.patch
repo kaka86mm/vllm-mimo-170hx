@@ -1,0 +1,65 @@
+From 1c6e6b1c8ba33f782868f3b4f7bef7f93eab6faa Mon Sep 17 00:00:00 2001
+From: Matri Ning <matri@MatrideMacBook-Pro.local>
+Date: Wed, 23 Sep 2026 17:30:04 +0800
+Subject: [PATCH] Warn when sliding-window KV capacity is pipeline-bound
+
+A sliding-window group's per-request reservation is
+sliding_window - 1 + extra_retained_tokens + max_in_flight_tokens
+(SlidingWindowSpec.max_admission_blocks_per_request), where
+max_in_flight_tokens = max_concurrent_batches * max_num_batched_tokens.
+Under pipeline parallelism max_concurrent_batches equals pp_size, so
+with pp_size=4 and max_num_batched_tokens=8192 each sliding group
+reserves 40960 in-flight tokens against a 128-token window: the
+in-flight term is 99.7% of the reservation and the resulting KV
+capacity is pipeline-depth-bound rather than window-bound.
+
+Measured on 4xPP (sm80, 48-layer hybrid model, 39 SWA window-128
+layers + 9 full layers, fp8 KV): lowering max_num_batched_tokens
+8192 -> 1024 grew the token pool 447,350 -> 1,160,104 (2.6x) while
+32K-token prefill got FASTER (9.7s -> 7.7s) and decode was unchanged
+(75 tok/s) - smaller chunks reduce head-of-line blocking.
+
+This condition is invisible today; diagnosing it required patching a
+probe into this function. Emit a one-time warning when in_flight
+exceeds 4x the window, naming the two levers that actually move the
+pool.
+---
+ vllm/v1/core/kv_cache_utils.py | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/vllm/v1/core/kv_cache_utils.py b/vllm/v1/core/kv_cache_utils.py
+index e2e38ec5d5..9a6c0cb2d6 100644
+--- a/vllm/v1/core/kv_cache_utils.py
++++ b/vllm/v1/core/kv_cache_utils.py
+@@ -1071,6 +1071,28 @@ def get_max_concurrency_for_kv_cache_config(
+         for group in kv_cache_config.kv_cache_groups
+     )
+     max_concurrency = kv_cache_config.num_blocks / num_blocks_per_request
++
++    in_flight = vllm_config.max_in_flight_tokens
++    for group in kv_cache_config.kv_cache_groups:
++        spec = group.kv_cache_spec
++        if isinstance(spec, UniformTypeKVCacheSpecs):
++            spec = next(iter(spec.kv_cache_specs.values()))
++        sliding_window = getattr(spec, "sliding_window", None)
++        if sliding_window is not None and in_flight > 4 * sliding_window:
++            logger.warning_once(
++                "Sliding-window group (%s layers, window %d) reserves %d "
++                "in-flight tokens per request - %.1fx the window itself "
++                "(max_concurrent_batches x max_num_batched_tokens). The "
++                "resulting KV capacity is pipeline-depth-bound, not "
++                "window-bound. To enlarge the pool, lower "
++                "--max-num-batched-tokens (chunks recycle faster) or reduce "
++                "pipeline parallelism.",
++                len(group.layer_names),
++                sliding_window,
++                in_flight,
++                in_flight / sliding_window,
++            )
++            break
+     return max_concurrency
+ 
+ 
+-- 
+2.50.1 (Apple Git-155)
+

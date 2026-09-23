@@ -1,0 +1,45 @@
+From 6b7a504e877bd33999db74c8da1f328265887ff5 Mon Sep 17 00:00:00 2001
+From: Matri Ning <matri@MatrideMacBook-Pro.local>
+Date: Wed, 23 Sep 2026 17:29:46 +0800
+Subject: [PATCH] Accept IEC suffixes (kiB/MiB/GiB/TiB) in human_readable_int
+
+The --kv-cache-memory hint printed by the V1 GPU worker annotates the
+suggested value as "(N GiB)" (gpu_worker.py:915), which invites users
+to paste that exact form back into the CLI - but human_readable_int's
+regex only accepted single-letter suffixes, so '--kv-cache-memory 11GiB'
+errored out with 'cannot be converted'.
+
+Strip a trailing iB/B from the suffix before matching so 11GiB,
+512MiB and 10G all parse. Binary IEC suffixes alias the existing
+uppercase binary multipliers; decimal forms are unchanged.
+
+Verified on a 4xPP deployment where the hint suggested
+'--kv-cache-memory=11809393664 (11.0 GiB)'.
+---
+ vllm/utils/argparse_utils.py | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/vllm/utils/argparse_utils.py b/vllm/utils/argparse_utils.py
+index fc906cf227..542553bf45 100644
+--- a/vllm/utils/argparse_utils.py
++++ b/vllm/utils/argparse_utils.py
+@@ -34,9 +34,16 @@ def human_readable_int(value: str) -> int:
+     - '1k' -> 1,000
+     - '1K' -> 1,024
+     - '25.6k' -> 25,600
++    - '11GiB' -> 11 * 2**30 (IEC suffixes alias their binary uppercase)
++
++    IEC-style two-letter suffixes (kiB, MiB, GiB, TiB) are accepted as
++    aliases of the binary uppercase suffixes, since the engine's own logs
++    (e.g. the --kv-cache-memory hint in gpu_worker) print sizes as
++    "(N GiB)", which invites users to paste that form back.
+     """
+     value = value.strip()
+ 
++    value = re.sub(r"([kKmMgGtT])i?[bB]$", r"\1", value)
+     match = re.fullmatch(r"(\d+(?:\.\d+)?)([kKmMgGtT])", value)
+     if match:
+         decimal_multiplier = {
+-- 
+2.50.1 (Apple Git-155)
+
