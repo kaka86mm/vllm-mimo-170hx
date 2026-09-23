@@ -30,6 +30,19 @@ else:
     print("  已是 Omni，跳过")
 PYEOF
 
+echo "[2.5/3] 解除隐藏输出上限 (generation_config max_new_tokens 2048 -> 65536)"
+python3 - "$DIR/generation_config.json" <<'PYEOF2'
+import json, sys
+p = sys.argv[1]
+c = json.load(open(p))
+if c.get("max_new_tokens", 65536) <= 4096:
+    c["max_new_tokens"] = 65536
+    json.dump(c, open(p, "w"), indent=2)
+    print("  已解除 2048 默认输出上限")
+else:
+    print("  已是高上限, 跳过")
+PYEOF2
+
 echo "[3/3] 校验分片完整性"
 python3 - "$DIR" <<'PYEOF'
 import json, os, sys

@@ -157,6 +157,7 @@ Reference numbers (acceptance run, mnbt 1024):
 | HTTP 500 on long concurrent prefills at 11 GiB KV | activation headroom gone | 10 GiB is the ceiling on 64 GB ranks |
 | KV pool only ~450K tokens | `max_num_batched_tokens` too high (pipeline-bound SWA reservation) | `--max-num-batched-tokens 1024`; see [RFC](https://github.com/wtdcode/vllm-backport/issues/105) |
 | `Model does not support EAGLE3 interface` | DFlash drafter under PP | use `"method":"mtp"` (DFlash needs all target layers local, i.e. TP) |
+| responses truncated at exactly 2048 tokens / empty content on direct calls without `max_tokens` | `generation_config.json` ships `max_new_tokens: 2048`, applied as the default `max_tokens` under generation-config auto (community-documented as the "hidden 2048 cap"; thinking can consume the whole budget before any content) | `download-weights.sh` rewrites it to 65536; or always pass `max_tokens` (the litellm entry injects 65536) |
 | empty `content` with image/video input | thinking-mode + `mimo` reasoning parser | `enable_thinking:false` in `chat_template_kwargs` |
 | HTTP 400 on audio input | OpenAI `input_audio` shape | `audio_url` + wav payload |
 | engine hangs after LMCache connector init | transfer-mode mismatch (`cudaErrorMapBufferObjectFailed` / missing engine-driven handler) | see `launch-omni-lmc.sh` header for the working combo; simplest: don't enable LMCache until SWA storage is fixed |
