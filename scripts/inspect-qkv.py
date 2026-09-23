@@ -1,10 +1,12 @@
+import os
 import json, struct
 
-idx = json.load(open("/home/matri/models/MiMo-V2.6-Flash-RL-official/model.safetensors.index.json"))
+MODEL_DIR = os.environ.get("MODEL_DIR", "/tmp/MiMo-V2.6-Flash-RL-official") + "/"
+idx = json.load(open(MODEL_DIR + "model.safetensors.index.json"))
 wm = idx["weight_map"]
 
 def header(shard):
-    with open("/home/matri/models/MiMo-V2.6-Flash-RL-official/" + shard, "rb") as f:
+    with open(MODEL_DIR + "" + shard, "rb") as f:
         n = struct.unpack("<Q", f.read(8))[0]
         return json.loads(f.read(n))
 

@@ -1,7 +1,7 @@
 import re
 
 SRC = "/tmp/kvcap_orig.py"
-DST = "/home/matri/mimo-v26/patches/kv_cache_utils.py"
+DST = os.environ.get("DST", "./patches/kv_cache_utils.py")
 
 import os
 os.makedirs(os.path.dirname(DST), exist_ok=True)

@@ -1,7 +1,7 @@
 import re
 
 SRC = "/tmp/mimo_v2_orig.py"
-DST = "/home/matri/mimo-v26/patches/mimo_v2.py"
+DST = os.environ.get("DST", "./patches/mimo_v2.py")
 
 import os
 os.makedirs(os.path.dirname(DST), exist_ok=True)
