@@ -162,7 +162,23 @@ Reference numbers (acceptance run, mnbt 1024):
 | HTTP 400 on audio input | OpenAI `input_audio` shape | `audio_url` + wav payload |
 | engine hangs after LMCache connector init | transfer-mode mismatch (`cudaErrorMapBufferObjectFailed` / missing engine-driven handler) | see `launch-omni-lmc.sh` header for the working combo; simplest: don't enable LMCache until SWA storage is fixed |
 
-## Known issue: color perception is broken in this build (affects images AND video)
+## Known issue (RESOLVED): vision chroma corrupted - port of upstream #58235
+
+Symptom was: pure-color probes misread (solid red -> white/blue/grey)
+across images AND video; structure survived. Root cause (upstream
+vllm-project/vllm#58235, open at time of port): the ViT window-attention
+sink was applied in key-0 additive form (sinks_bias_key0=True) instead
+of the null-softmax-logit form - a no-op on uniform inputs, so every
+patch token of a flat-color image came out identical. Plus a missing
+packed_modules_mapping on the omni wrapper.
+
+Ported via volume-mount of a patched mimo_v2_omni model file
+(sinks_bias_key0=False + packed_modules_mapping); see
+patches/0001-upstream-58235-vit-sink-omni-mapping.diff for the upstream
+diff. Verified: solid red image and video both answered correctly,
+testsrc colors genuinely read, text/audio/tools unaffected.
+
+## Historical notes of the investigation
 
 Pure-color probes return wrong colors: a solid red image is described as
 white/blue/grey; a solid red video as white. Structure survives (the
