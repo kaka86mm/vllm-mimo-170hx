@@ -116,6 +116,14 @@ Expected: decode ≈ 70 tok/s per stream; tool call returns
 describes the testsrc countdown digits (8→5→2) and colors; the audio answer
 identifies a continuous high-frequency beep.
 
+**Video frame budget**: default sampling pins any video at ~1.4K prompt
+tokens (~16 effective frames) regardless of duration - fine for "what is
+this video about", too sparse for per-second detail. The knob is
+`--media-io-kwargs '{"video": {"num_frames": 128}}'` (~5.6K tokens,
+empowered frame math: frames / temporal-group-2 x ~88 tok/frame; NOT
+`--mm-processor-kwargs`, which this processor ignores). Note the model's
+duration estimate is a frames-x-assumed-fps heuristic, not ground truth.
+
 Multimodal requests should carry `"chat_template_kwargs": {"enable_thinking": false}` —
 under thinking mode the `mimo` reasoning parser intermittently returns empty
 content with mm inputs. Audio input uses `{"type":"audio_url","audio_url":{"url":"data:audio/wav;base64,..."}}`
