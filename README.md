@@ -13,7 +13,7 @@ Everything here was measured on real hardware over one deployment session (Sep 2
 | Single-stream decode | 69–75 tok/s (MTP acceptance ~0.57–1.0 per position) |
 | 16-stream aggregate | 290 tok/s |
 | Prefill | 8K: 2.6 s · 32K: 7.8 s (~4.2K tok/s) |
-| KV pool | **1,160,104 tokens** (4.43× a 262,144-token request; peak 20.1% under 4×191K concurrent) |
+| KV pool | **1,160,104 tokens** (1.2× a 1,048,576-token request; peak 20.1% under 4×191K concurrent) |
 | Modalities | text ✓ image ✓ video ✓ audio ✓ (accurate sine-wave & testsrc descriptions) |
 | Tool calls / reasoning parser | ✓ (`mimo` parsers) |
 

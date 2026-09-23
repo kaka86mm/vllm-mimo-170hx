@@ -87,7 +87,7 @@ MTP drafter). Success looks like:
 
 ```
 (Worker_PPx) Model loading took 4x.xx GiB memory ...
-(EngineCore) GPU KV cache size: 1,160,104 tokens, Maximum concurrency for 262,144 tokens per request: 4.43x
+(EngineCore) GPU KV cache size: 1,160,104 tokens, Maximum concurrency for 1,048,576 tokens per request: 1.2x
 (APIServer) Application startup complete.
 ```
 
