@@ -10,10 +10,10 @@ Everything here was measured on real hardware over one deployment session (Sep 2
 |---|---|
 | Weights | `ProCreations/MiMo-V2.6-Flash-RL-NVFP4` (value-identical NVFP4 transcode, arch switched to `MiMoV2OmniForCausalLM`) |
 | Topology | PP=4, layer partition `11,13,12,12`, fp8_e4m3 KV, MTP 3-token spec decode |
-| Single-stream decode | 69–75 tok/s (MTP acceptance ~0.57–1.0 per position) |
-| 16-stream aggregate | 290 tok/s |
+| Single-stream decode | **93 tok/s** warm (75 with OPROJ_FP8 off; MTP acceptance ~0.57–1.0 per position) |
+| 16-stream aggregate | 290 tok/s (pre-OPROJ; OPROJ helps decode-bound shapes most) |
 | Prefill | 8K: 2.6 s · 32K: 7.8 s (~4.2K tok/s) |
-| KV pool | **1,160,104 tokens** (1.2× a 1,048,576-token request; peak 20.1% under 4×191K concurrent) |
+| KV pool | **1,329,835 tokens** (1.27× a 1,048,576-token request) at 1M context |
 | Modalities | text ✓ image ✓ video ✓ audio ✓ (accurate sine-wave & testsrc descriptions) |
 | Tool calls / reasoning parser | ✓ (`mimo` parsers) |
 
@@ -57,6 +57,7 @@ Smaller chunks also *reduce* head-of-line blocking on the pipeline, so prefill g
 5. **Multimodal + thinking**: requests with mm content should set `"chat_template_kwargs": {"enable_thinking": false}` — the `mimo` reasoning parser intermittently swallows content under thinking mode with mm inputs.
 6. **Audio input**: use `audio_url` + wav (not OpenAI's `input_audio` format).
 7. **LMCache MP on CMP-unlocked drivers**: AUTO transfer mode walks GPU-IPC (`cudaErrorMapBufferObjectFailed`); the working combo is a CPU-only `lmcache server` + `--supported-transfer-mode engine_driven` + `"lmcache.mp.mp_transfer_mode":"engine_driven"` in the connector extra config + `--prefix-cache-retention-interval <chunk>` for hybrid models. But over PCIe 2.0 x4, retrieval (222 tok/s under load) loses to recomputation (19K tok/s) until SWA storage is fixed — capacity feature, not a latency feature.
+8. **fp8 o_proj (OPROJ_FP8)** — ported from [wtdcode/vllm-backport#106](https://github.com/wtdcode/vllm-backport/pull/106) (avtc's commit `ced6985f`): the checkpoint's dense-bf16 `o_proj` is quantized to per-tensor fp8 at load and runs Marlin **W8A16** on sm80 (the fork's online-fp8 path needs an explicit `force_kernel` route there — see `patches/online_fp8.py`). Decode GEMM is memory-bound in PP, so halving the weight read wins: **75 → 93 tok/s single-stream (+24%)**, warm, KV pool unchanged (1,329,835), quality smoke clean (incl. the 9.11 vs 9.9 trap). Lossy but quality-neutral (upstream GSM8K parity 82.7 vs 82.0). Off-switch: remove `VLLM_MIMO_OPROJ_FP8=1` — the patched files are byte-identical to stock with the env unset. Same port ships an **audio-tower lazy-load gate** (`patches/mimo_v2_omni_model.py`): with `--limit-mm-per-prompt '{"audio": 0}'` the 1.9 GB tower is never built; we keep audio enabled by default since it's a verified modality.
 
 ## Related upstream contributions
 
@@ -66,4 +67,4 @@ Smaller chunks also *reduce* head-of-line blocking on the pipeline, so prefill g
 
 ## 中文摘要
 
-4×CMP 170HX（无 P2P、只能 PP）上跑 MiMo-V2.6-Flash-RL 全模态的完整部署与调优记录。核心成果：KV 池从 44.7 万 token 扩到 116 万（根因是滑窗组的在途预留随流水线深度膨胀，修法是把 mnbt 压到 1024，prefill 反而更快）；单流 75 tok/s、16 流 290 tok/s；文/图/视/音四模态全部可用。所有坑（官方权重 TP4 交错 loader bug、DFlash×PP 结构性缺失、LMCache 三种传输模式的排雷、层切分按 rank 实测权重配平）都写在 `docs/RESULT.md`。
+4×CMP 170HX（无 P2P、只能 PP）上跑 MiMo-V2.6-Flash-RL 全模态的完整部署与调优记录。核心成果：KV 池从 44.7 万 token 扩到 133 万（根因是滑窗组的在途预留随流水线深度膨胀，修法是把 mnbt 压到 1024，prefill 反而更快）；单流 75 → **93 tok/s**（移植 avtc PR#106 的 fp8 o_proj，sm80 走 Marlin W8A16）；16 流 290 tok/s；文/图/视/音四模态全部可用。所有坑（官方权重 TP4 交错 loader bug、DFlash×PP 结构性缺失、LMCache 三种传输模式的排雷、层切分按 rank 实测权重配平）都写在 `docs/RESULT.md`。
