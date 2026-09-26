@@ -313,6 +313,7 @@ class MiMoV2MTP(nn.Module):
                         v_head_dim=attn.v_head_dim,
                         tp_rank=tp_rank,
                         tp_size=tp_size,
+                        kv_chunk_rows=getattr(attn, "kv_chunk_rows", 0),
                     )
                     for pname, tensor in (
                         (f"{base}.weight", w_r),

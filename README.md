@@ -59,7 +59,7 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 
 | File | Purpose |
 |---|---|
-| `patches/mimo_v2.py` | Official-checkpoint fused-QKV loader (Xiaomi exports it pre-sharded NB=4; the stock loader scrambles K/V at TP=1) + opt-in fp8 o_proj quantization (`VLLM_MIMO_OPROJ_FP8=1`) |
+| `patches/mimo_v2.py` | Official-checkpoint fused-QKV loader: **exact (lossless) sharding below the checkpoint's TP=4 chunking** — SWA layers load as a pure scale-block permutation, GA layers keep each chunk's K/V rows on their checkpoint scales in a zero-padded layout the forward splits (`VLLM_MIMO_EXACT_QKV=0` restores the requantizing path; audit: `scripts/audit-exact-qkv.py`, 0 weights changed on all 48 layers). Also carries the opt-in fp8 o_proj quantization (`VLLM_MIMO_OPROJ_FP8=1`) |
 | `patches/mimo_v2_mtp.py` | MTP drafter loader for the official `model_mtp.safetensors` (fp8 weight/scale paired sharding) |
 | `patches/fp8.py` + `patches/online_fp8.py` | Route fp8 GEMMs to Marlin W8A16 on sm80 (no native fp8); without this the stock selection falls into a runtime-dequant path that costs 73% decode |
 | `patches/mimo_v2_omni_model.py`, `patches/mimo_v2_omni.py` | ViT attention-sink fix (upstream [vllm#58235](https://github.com/vllm-project/vllm/pull/58235) port — without it the model is color-blind) + processor fixes; optional audio-tower skip at `audio=0` |

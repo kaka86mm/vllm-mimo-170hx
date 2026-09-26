@@ -486,6 +486,7 @@ def _shard_fp8_qkv_proj(
     tp_rank: int,
     tp_size: int,
     block: int = 128,
+    kv_chunk_rows: int = 0,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Shard the fp8 qkv_proj weights for ``tp_rank``.
 
@@ -550,6 +551,57 @@ def _shard_fp8_qkv_proj(
         w = w_full.chunk(nb, dim=0)[tp_rank]
         s = s_full.chunk(nb, dim=0)[tp_rank]
         return w, s
+
+
+    # Exact loading (local-inference-lab/vllm#874 via the diffbot recipe):
+    # every row keeps its checkpoint FP8 value and block scale. Either the
+    # sections span whole scale blocks (pure permutation into [Q..|K..|V..])
+    # or, with kv_chunk_rows, each chunk's K|V rows stay together zero-padded
+    # to whole blocks. Requires the per-block-padded scale layout.
+    cdiv = lambda a, b: -(-a // b)
+    exact_ok = (
+        s_full.shape[0] == padded_scale_rows
+        and tp_size < nb
+        and nb % tp_size == 0
+        and q_rows_per_block % block == 0
+        and (
+            kv_chunk_rows
+            or (k_rows_per_block % block == 0 and v_rows_per_block % block == 0)
+        )
+    )
+    if exact_ok:
+        g = nb // tp_size
+        chunks = range(tp_rank * g, (tp_rank + 1) * g)
+        q_end, k_end = q_rows_per_block, q_rows_per_block + k_rows_per_block
+
+        def wrows(c: int, a: int, b: int) -> torch.Tensor:
+            return w_full[c * rows_per_block + a : c * rows_per_block + b]
+
+        def srows(c: int, a: int, b: int) -> torch.Tensor:
+            base = c * per_block_scale_rows
+            return s_full[base + a // block : base + cdiv(b, block)]
+
+        if kv_chunk_rows:
+            pad = kv_chunk_rows - (rows_per_block - q_end)
+            ws = [wrows(c, 0, q_end) for c in chunks]
+            for c in chunks:
+                kv = wrows(c, q_end, rows_per_block).view(torch.uint8)
+                ws.append(
+                    torch.cat([kv, kv.new_zeros((pad, kv.shape[1]))]).view(
+                        w_full.dtype
+                    )
+                )
+            ss = [srows(c, 0, q_end) for c in chunks] + [
+                srows(c, q_end, rows_per_block) for c in chunks
+            ]
+        else:
+            segs = ((0, q_end), (q_end, k_end), (k_end, rows_per_block))
+            ws = [wrows(c, *sg) for sg in segs for c in chunks]
+            ss = [srows(c, *sg) for sg in segs for c in chunks]
+        return (
+            torch.cat([w.view(torch.uint8) for w in ws]).view(w_full.dtype),
+            torch.cat(ss),
+        )
 
     # Dequantize to float, row-wise over the whole tensor.
     if s_full.shape[0] == padded_scale_rows:
@@ -889,6 +941,7 @@ class MiMoV2Model(nn.Module, EagleModelMixin):
             v_head_dim=attn.v_head_dim,
             tp_rank=tp_rank,
             tp_size=tp_size,
+            kv_chunk_rows=getattr(attn, "kv_chunk_rows", 0),
         )
         sharded = {"weight": w_rank, "weight_scale_inv": s_rank}
         for kind, tensor in sharded.items():
