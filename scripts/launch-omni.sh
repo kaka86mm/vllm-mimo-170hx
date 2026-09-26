@@ -40,5 +40,5 @@ docker run -d --name mimo26 --restart unless-stopped \
   --async-scheduling \
   --no-enable-flashinfer-autotune \
   --media-io-kwargs '{"video": {"num_frames": 128}}' \
-  --speculative-config '{"method":"mtp","num_speculative_tokens":3,"draft_sample_method":"probabilistic","rejection_sample_method":"block"}'
+  --speculative-config '{"method":"mtp","num_speculative_tokens":2,"draft_sample_method":"probabilistic","rejection_sample_method":"block"}'
 echo started

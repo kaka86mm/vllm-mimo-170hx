@@ -6,13 +6,13 @@ Text, image, video and audio in; tool calls and a reasoning parser enabled. Ever
 
 ## Performance
 
-Production config = official 161 GB fp8 checkpoint, PP=4, fp8 KV cache (15 GiB), MTP 3-token speculative decoding, fp8 o_proj. `scripts/bench-full.py` reproduces every number (unique-content prompts, thinking off, warm decode):
+Production config = official 161 GB fp8 checkpoint, PP=4, fp8 KV cache (15 GiB), MTP 2-token speculative decoding, fp8 o_proj. `scripts/bench-full.py` reproduces every number (unique-content prompts, thinking off, warm decode):
 
 | Metric | Result |
 |---|---|
-| Single-stream decode (greedy) | **100–104 tok/s** |
+| Single-stream decode (greedy) | **107–109 tok/s** (MTP k=2; k=3 measured 100–104) |
 | Single-stream decode (temp 1.0, streaming) | 74–82 tok/s |
-| 8 / 16-stream aggregate | 212–218 / 286–332 tok/s |
+| 8 / 16-stream aggregate | 243 / 353 tok/s |
 | Prefill, 18.7K-token prompt (cold) | ~4.0 s ≈ 4.7K tok/s |
 | Prefill, 75K-token prompt (cold) | 26–29 s ≈ 2.6–2.9K tok/s |
 | KV pool | **1,994,875 tokens** = 1.90× a 1M-token request |
