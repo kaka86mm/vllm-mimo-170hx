@@ -84,4 +84,4 @@ All patches are inactive on the NVFP4 track, so both launchers coexist.
 
 ## 中文摘要
 
-4×CMP 170HX（无 P2P、只能 PP4）上跑 MiMo-V2.6-Flash-RL 全模态的生产部署。现役配置 = 官方 161GB fp8 权重：单流 greedy 100–104 tok/s、16 流聚合 ~300 tok/s、KV 池 199 万 token（可同时容纳 2 个完整 1M 上下文）。文/图/视/音四模态 + 工具调用全部可用。核心坑（官方 QKV 的 NB=4 导出布局、sm80 上 fp8 落入运行时反量化路径导致 -73% decode、滑窗 KV 在途预留随流水线深度膨胀、ViT sink 色彩 bug）均已修复并沉淀为挂载补丁。完整工程日志见 `docs/RESULT.md`；NVFP4 回退轨保留在 `launch-omni.sh` / tag `v1.3-prod`。
+4×CMP 170HX（无 P2P、只能 PP4）上跑 MiMo-V2.6-Flash-RL 全模态的生产部署。现役配置 = 官方 161GB fp8 权重 + MTP k=2 投机解码（k=3 的第 3 草稿位接受率仅 ~8%，k=2 全面更优）：单流 greedy 107–109 tok/s、16 流聚合 353 tok/s、KV 池 199 万 token（可同时容纳 2 个完整 1M 上下文）。文/图/视/音四模态 + 工具调用全部可用。核心坑（官方 QKV 的 NB=4 导出布局、sm80 上 fp8 落入运行时反量化路径导致 -73% decode、滑窗 KV 在途预留随流水线深度膨胀、ViT sink 色彩 bug）均已修复并沉淀为挂载补丁。完整工程日志见 `docs/RESULT.md`；NVFP4 回退轨保留在 `launch-omni.sh` / tag `v1.3-prod`。
