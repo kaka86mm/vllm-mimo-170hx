@@ -162,8 +162,13 @@ class MiMoV2MoE(nn.Module):
             bias=False,
             dtype=self.gate_dtype,
         )
+        # `moe_router_dtype` is the dtype of the gate *weight. The logits and
+        # the noaux_tc correction bias (stored in float32 by the checkpoint)
+        # stay in float32 so near-tied experts are ranked as in the reference
+        # implementation instead of after rounding to the weight dtype.
+        # (upstream wtdcode/vllm-backport 07c10602)
         self.gate.e_score_correction_bias = nn.Parameter(
-            torch.empty(config.n_routed_experts, dtype=self.gate_dtype)
+            torch.empty(config.n_routed_experts, dtype=torch.float32)
         )
 
         self.experts = FusedMoEFactory(
@@ -182,7 +187,7 @@ class MiMoV2MoE(nn.Module):
             num_expert_group=config.n_group,
             topk_group=config.topk_group,
             scoring_func="sigmoid",
-            router_logits_dtype=self.gate_dtype,
+            router_logits_dtype=torch.float32,
         )
 
     def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
@@ -194,11 +199,13 @@ class MiMoV2MoE(nn.Module):
         if self.is_sequence_parallel:
             hidden_states = sequence_parallel_chunk(hidden_states)
 
-        if self.gate_dtype is not None:
-            gate_input = hidden_states.to(self.gate_dtype)
+        gate_input = hidden_states.to(self.gate_dtype)
+        if self.gate_dtype != torch.float32 and gate_input.is_cuda:
+            router_logits = torch.mm(
+                gate_input, self.gate.weight.t(), out_dtype=torch.float32
+            )
         else:
-            gate_input = hidden_states
-        router_logits = self.gate(gate_input)
+            router_logits = self.gate(gate_input).float()
         final_hidden_states = self.experts(
             hidden_states=hidden_states, router_logits=router_logits
         )
