@@ -6,13 +6,13 @@ Text, image, video and audio in; tool calls and a reasoning parser enabled. Ever
 
 ## Performance
 
-Production config = official 161 GB fp8 checkpoint, PP=4, fp8 KV cache (15 GiB), MTP 2-token speculative decoding, fp8 o_proj. `scripts/bench-full.py` reproduces every number (unique-content prompts, thinking off, warm decode):
+Production config = official 161 GB fp8 checkpoint, PP=4, fp8 KV cache (15 GiB), fp8 o_proj, **speculative decoding OFF** (see the long-context note below). `scripts/bench-full.py` reproduces every number (unique-content prompts, thinking off, warm decode):
 
 | Metric | Result |
 |---|---|
-| Single-stream decode (greedy) | **107–109 tok/s** (MTP k=2; k=3 measured 100–104) |
+| Single-stream decode (greedy, ~0 ctx) | 64.5 tok/s (no spec; MTP k=2 gives 106 but only at trivial contexts — see below) |
 | Single-stream decode (temp 1.0, streaming) | 74–82 tok/s |
-| 8 / 16-stream aggregate | 243 / 353 tok/s |
+| Single-stream decode @19K / @67K ctx | 60 / 56 tok/s |
 | Prefill, 18.7K-token prompt (cold) | ~4.0 s ≈ 4.7K tok/s |
 | Prefill, 75K-token prompt (cold) | 26–29 s ≈ 2.6–2.9K tok/s |
 | KV pool | **1,994,875 tokens** = 1.90× a 1M-token request |
@@ -74,6 +74,7 @@ All patches are inactive on the NVFP4 track, so both launchers coexist.
 - **Audio input**: use `audio_url` + wav (not OpenAI's `input_audio`).
 - GPU memory is intentionally uneven (encoders on PP0, drafter + lm_head on the last rank); `VLLM_PP_LAYER_PARTITION=11,13,12,12` is the measured balance and further tuning gains <1%.
 - Prompt-prefix caching is on; expect ~33K tok/s on cache-hit re-prefills.
+- **Speculative decoding is off, deliberately.** The MTP verify pass (any q_len>1 attention) hits a kernel cliff on this stack: decode at 67K context collapses from 56 (no spec) to 16.5 tok/s (k=2) / 17.5 (k=1) — a 3.4x penalty that dwarfs the acceptance win. The cliff starts by 5K context (42.5 tok/s at k=1). Spec only pays below ~2K context. Measured solo, steady-state; agents live at 5K–100K effective contexts, so production runs without spec until the verify kernel is fixed (upstream: wtdcode's new DFlash/MTP machinery, avtc's TP8 split-KV work).
 
 ## Credits
 
