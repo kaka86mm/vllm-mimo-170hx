@@ -52,6 +52,9 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 - `scripts/launch-official.sh` — production launcher (official weights)
 - `scripts/launch-omni.sh` — NVFP4 fallback launcher
 - `scripts/bench-full.py` — decode + prefill benchmark (real token counts)
+- `scripts/bench-ctx-long.py` — steady-state decode vs context length (default 18600 words ≈ 67K tokens; pass N as argv[1])
+- `scripts/bench-ctx-multi.py` — N-concurrent long-context decode (aggregate + per-stream tok/s)
+- `scripts/kernel-ab-spec3d.py` — kernel-level A/B: stock vs spec-3D `unified_attention_diffkv` (CUDA events, GA shape)
 - `scripts/omni-test*.py`, `video-diag.py` — multimodal verification
 - `scripts/kv-stress2.py` — long-context admission stress
 - `patches/` — vLLM patches mounted by the launchers (see below)
@@ -66,6 +69,7 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 | `patches/fp8.py` + `patches/online_fp8.py` | Route fp8 GEMMs to Marlin W8A16 on sm80 (no native fp8); without this the stock selection falls into a runtime-dequant path that costs 73% decode |
 | `patches/mimo_v2_omni_model.py`, `patches/mimo_v2_omni.py` | ViT attention-sink fix (upstream [vllm#58235](https://github.com/vllm-project/vllm/pull/58235) port — without it the model is color-blind) + processor fixes; optional audio-tower skip at `audio=0` |
 | `patches/triton_attn_diffkv.py` | Split-KV knob for the DiffKV attention verify step (`VLLM_DIFFKV_FULL_ATTN_SEGMENTS=64`) |
+| `patches/triton_unified_attention_diffkv.py` | Spec-3D verify kernel (from the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-DGX-Sparks)); env-gated `VLLM_DIFFKV_SPEC_3D_MAX_Q`/`_BLOCK_M`/`_NUM_WARPS`/`_TILE`. Upstream: [vllm#59054](https://github.com/vllm-project/vllm/issues/59054) + [PR#59085](https://github.com/vllm-project/vllm/pull/59085) + [backport#110](https://github.com/wtdcode/vllm-backport/pull/110) |
 
 All patches are inactive on the NVFP4 track, so both launchers coexist.
 
@@ -76,7 +80,7 @@ All patches are inactive on the NVFP4 track, so both launchers coexist.
 - **Audio input**: use `audio_url` + wav (not OpenAI's `input_audio`).
 - GPU memory is intentionally uneven (encoders on PP0, drafter + lm_head on the last rank); `VLLM_PP_LAYER_PARTITION=11,13,12,12` is the measured balance and further tuning gains <1%.
 - Prompt-prefix caching is on; expect ~33K tok/s on cache-hit re-prefills.
-- **Speculative decoding is off, deliberately.** The MTP verify pass (any q_len>1 attention) hits a kernel cliff on this stack: decode at 67K context collapses from 56 (no spec) to 16.5 tok/s (k=2) / 17.5 (k=1) — a 3.4x penalty that dwarfs the acceptance win. The cliff starts by 5K context (42.5 tok/s at k=1). Spec only pays below ~2K context. Measured solo, steady-state; agents live at 5K–100K effective contexts, so production runs without spec until the verify kernel is fixed (upstream: wtdcode's new DFlash/MTP machinery, avtc's TP8 split-KV work).
+- **Speculative decoding is off, deliberately.** The MTP verify pass (any q_len>1 attention) hits a kernel cliff on this stack: decode at 67K context collapses from 56 (no spec) to 16.5 tok/s (k=2) / 17.5 (k=1) — a 3.4x penalty that dwarfs the acceptance win. The cliff starts by 5K context (42.5 tok/s at k=1). Spec only pays below ~2K context. Measured solo, steady-state; agents live at 5K–100K effective contexts, so production runs without spec until the verify kernel is fixed. **The kernel fix exists in this repo** (`patches/triton_unified_attention_diffkv.py`): mount it + `VLLM_DIFFKV_FULL_ATTN_SEGMENTS=64` + enable MTP — that takes 67K-context spec decode from 16.5 to **33.7 tok/s** (kernel-level 7-20× per verify call, `q=1` unaffected). Still loses to no-spec (56.1) on this rig — the remaining gap sits elsewhere in the verify path (SWA-layer verify, draft forward, PP hop overhead). Full analysis: [vllm#59054](https://github.com/vllm-project/vllm/issues/59054); upstream port: [vllm#59085](https://github.com/vllm-project/vllm/pull/59085) (with the sm80 measurements from this repo folded in).
 
 ## Credits
 
