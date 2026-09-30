@@ -13,7 +13,7 @@ MODEL_DIR=${MODEL_DIR:-/home/matri/models/MiMo-V2.6-Flash-RL-official}
 PORT=${PORT:-8099}
 IMAGE=${IMAGE:-docker.m.daocloud.io/lazymio/vllm-backport:v0.13.0-sm80}
 PATCHES="$(cd "$(dirname "$0")/../patches" && pwd)"
-for _p in "$PATCHES/mimo_v2_omni_model.py" "$PATCHES/mimo_v2_omni.py" "$PATCHES/triton_attn_diffkv.py" "$PATCHES/mimo_v2.py" "$PATCHES/online_fp8.py" "$PATCHES/mimo_v2_mtp.py" "$PATCHES/fp8.py"; do
+for _p in "$PATCHES/mimo_v2_omni_model.py" "$PATCHES/mimo_v2_omni.py" "$PATCHES/triton_attn_diffkv.py" "$PATCHES/triton_unified_attention_diffkv.py" "$PATCHES/mimo_v2.py" "$PATCHES/online_fp8.py" "$PATCHES/mimo_v2_mtp.py" "$PATCHES/fp8.py"; do
   [ -f "$_p" ] || { echo "缺补件: $_p"; exit 1; }
 done
 
@@ -21,10 +21,12 @@ docker rm -f mimo26 2>/dev/null || true
 docker run -d --name mimo26 --restart unless-stopped \
   --runtime=nvidia -e NVIDIA_VISIBLE_DEVICES=0,1,2,3 \
   -e HF_HUB_OFFLINE=1 -e VLLM_DIFFKV_FULL_ATTN_SEGMENTS=64 -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
+  -e VLLM_DIFFKV_PREFILL_TILE=64 \
   -e VLLM_MIMO_OPROJ_FP8=1 \
   -e LMCACHE_MP_TRANSFER_MODE=engine_driven -e VLLM_PP_LAYER_PARTITION=11,13,12,12 \
   -v "$MODEL_DIR":/model:ro \
   -v "$PATCHES/triton_attn_diffkv.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/triton_attn_diffkv.py:ro" \
+  -v "$PATCHES/triton_unified_attention_diffkv.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/ops/triton_unified_attention_diffkv.py:ro" \
   -v "$PATCHES/mimo_v2_omni_model.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/mimo_v2_omni.py:ro" \
   -v "$PATCHES/online_fp8.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/layers/quantization/online/fp8.py:ro" \
   -v "$PATCHES/mimo_v2.py:/usr/local/lib/python3.12/dist-packages/vllm/model_executor/models/mimo_v2.py:ro" \
