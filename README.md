@@ -84,6 +84,8 @@ All patches are inactive on the NVFP4 track, so both launchers coexist.
 
 - **Long-context chunked prefill hits the same cliff family (2026-09-30).** With agent contexts at 150–250K, every 1024-token chunk's new queries attend over the full history on the 2D kernel path (`BLOCK_M=16` = one query token per program, zero KV-dim parallelism): 620 ms per GA layer at 200K context on sm80 — ~5.6 s per chunk step across 9 GA layers, which stalls the whole mixed batch (decode riders included) to ~0.2 tok/s for minutes at a time. Prefix caching does not help: it skips recomputing history K/V but the new queries still scan the full KV. **Fix (same file): prefill q-tiling** — `BLOCK_M=128` packs 8 query tokens per program so each KV tile is read once instead of 8 times. Measured in-container on the 4×170HX rig, chunk q=1024 @200K prior KV, bf16: stock 624 ms → 210 ms (`BLOCK_M=128`, `TILE=64`, 8 warps) = **3.0×**; mixed batch (chunk + 4 giant-KV decodes) 637 → 309 ms; SWA-layer chunks 0.35 → 0.15 ms; decode-only and spec-verify shapes bit-identical. `VLLM_DIFFKV_PREFILL_TILE=64` is set by the launcher (sm80 has 164 KB smem; `BLOCK_M≥256`+`TILE=64` exceeds it and crashes).
 
+  **End-to-end (production restart 2026-09-30):** a 201,913-token unique-context probe prefills in **74.7 s = 2,703 tok/s** (was ~170 tok/s projected on the stock kernel — a ~16× recovery to the healthy 75K-class rate); 67K-context decode 49.5 tok/s under concurrent agent load (no regression); tool calls, reasoning parse and the router-precision edge case all pass. Multi-minute 0.2 tok/s stalls are gone; agent context reloads now take 1–2 min each instead of ~20.
+
 ## Credits
 
 - [wtdcode/vllm-backport](https://github.com/wtdcode/vllm-backport) — the sm80 fork this runs on
