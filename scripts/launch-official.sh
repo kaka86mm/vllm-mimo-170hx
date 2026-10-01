@@ -22,9 +22,10 @@ done
 # CPU-tier LMCache server (persistent; PR#4410 build, chunk 8192 / L1 100GB)
 if ! docker ps --format "{{.Names}}" | grep -q "^lmcache-server$"; then
   docker rm -f lmcache-server 2>/dev/null || true
+  mkdir -p /lmcache-l2
   docker run -d --name lmcache-server --init --restart unless-stopped \
-    --network host --ipc host --entrypoint bash "$IMAGE" \
-    -c "lmcache server --host 0.0.0.0 --port 5555 --chunk-size 8192 --shm-name mimo26shm --separate-object-groups --supported-transfer-mode engine_driven --l1-size-gb 100 --eviction-policy LRU" \
+    --network host --ipc host -v /lmcache-l2:/lmcache-l2 \
+    --entrypoint /cmd.sh -v $(dirname "$0")/../scripts/lmc-server-cmd.sh:/cmd.sh:ro "$IMAGE" \
     && echo "lmcache-server started (:5555, chunk 8192)"
 fi
 
