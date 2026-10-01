@@ -24,7 +24,7 @@ if ! docker ps --format "{{.Names}}" | grep -q "^lmcache-server$"; then
   docker rm -f lmcache-server 2>/dev/null || true
   docker run -d --name lmcache-server --init --restart unless-stopped \
     --network host --ipc host --entrypoint bash "$IMAGE" \
-    -c "lmcache server --host 0.0.0.0 --port 5555 --chunk-size 8192 --separate-object-groups --supported-transfer-mode engine_driven --l1-size-gb 100 --eviction-policy LRU" \
+    -c "lmcache server --host 0.0.0.0 --port 5555 --chunk-size 8192 --shm-name mimo26shm --separate-object-groups --supported-transfer-mode engine_driven --l1-size-gb 100 --eviction-policy LRU" \
     && echo "lmcache-server started (:5555, chunk 8192)"
 fi
 
