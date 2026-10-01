@@ -35,7 +35,7 @@ docker run -d --name mimo26 --restart unless-stopped \
   -e HF_HUB_OFFLINE=1 -e VLLM_DIFFKV_FULL_ATTN_SEGMENTS=64 -e VLLM_WORKER_MULTIPROC_METHOD=spawn \
   -e VLLM_DIFFKV_PREFILL_TILE=64 \
   -e VLLM_MIMO_OPROJ_FP8=1 \
-  -e LMCACHE_MP_TRANSFER_MODE=engine_driven -e VLLM_PP_LAYER_PARTITION=11,13,12,12 \
+  -e LMCACHE_MP_TRANSFER_MODE=engine_driven -e VLLM_PP_LAYER_PARTITION=12,12,12,12 \
   -v "$MODEL_DIR":/model:ro \
   -v "$PATCHES/triton_attn_diffkv.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/triton_attn_diffkv.py:ro" \
   -v "$PATCHES/tuad_spec3d.py:/usr/local/lib/python3.12/dist-packages/vllm/v1/attention/ops/triton_unified_attention_diffkv.py:ro" \
@@ -53,7 +53,7 @@ docker run -d --name mimo26 --restart unless-stopped \
   --max-model-len 1048576 \
   --max-num-batched-tokens 1024 \
   --trust-remote-code \
-  --kv-cache-memory 16106127360 --gpu-memory-utilization 0.94 \
+  --kv-cache-memory 17179869184 --gpu-memory-utilization 0.94 \
   --max-num-seqs 32 \
   --reasoning-parser mimo --tool-call-parser mimo \
   --enable-auto-tool-choice \
