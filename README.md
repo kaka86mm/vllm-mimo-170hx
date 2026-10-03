@@ -6,19 +6,17 @@ Text, image, video and audio in; tool calls and a reasoning parser enabled. Ever
 
 ## Performance
 
-Production config = official 161 GB fp8 checkpoint, PP=4 (`12,12,12,12`), fp8 KV cache (**16 GiB**), fp8 o_proj, **speculative decoding OFF** (see the long-context note below), and a **three-tier KV storage stack** (GPU → RAM → disk, see below). `scripts/bench-full.py` reproduces the decode/prefill numbers (unique-content prompts, thinking off, warm decode):
+Production config = official 161 GB fp8 checkpoint, PP=4 (`12,12,12,12`), fp8 KV cache (**15.5 GiB**), fp8 o_proj, **speculative decoding OFF** (see the long-context note below), and a **three-tier KV storage stack** (GPU → RAM → disk, see below). `scripts/bench-full.py` reproduces the decode/prefill numbers (unique-content prompts, thinking off, warm decode):
 
 | Metric | Result |
 |---|---|
 | Single-stream decode (greedy, ~0 ctx) | 64.5 tok/s (no spec; MTP k=2 gives 106 but only at trivial contexts — see below) |
-| Single-stream decode (temp 1.0, streaming) | 74–82 tok/s |
 | Single-stream decode @19K / @67K ctx | 60 / 56 tok/s |
-| Aggregate, short ctx ×2/4/8/16 streams | 110 / 137 / 210 / 302 tok/s |
-| Aggregate, long ctx: 19K×2/×4/×8, 67K×2/×4 | 99 / 143 / 260, 103 / 136 tok/s |
-| Prefill, 18.7K-token prompt (cold) | ~4.0 s ≈ 4.7K tok/s |
-| Prefill, 75K-token prompt (cold) | 26–29 s ≈ 2.6–2.9K tok/s |
-| Prefill, 200K-token prompt (cold, q-tiling kernel) | 74.7 s ≈ 2.7K tok/s (stock kernel: ~170 tok/s — see notes) |
-| KV pool (GPU) | **2,127,834 tokens** = 2.03× a 1M-token request |
+| Aggregate, short ctx ×16 / ×32 streams | **483 / 752 tok/s** (2026-10-04 re-measure on v3.3; the old 302 @16 figure predates the `12,12,12,12` rebalance + 250 W cap) |
+| Aggregate, long ctx: 19K×2/×4/×8, 67K×2/×4 | 99 / 143 / 260, 103 / 136 tok/s (2026-09-28, pre-rebalance) |
+| Prefill, 20K-token prompt (cold, unique) | 3.3 s ≈ **5.9–6.2K tok/s** |
+| Prefill, 200K-token prompt (cold, unique, q-tiling + QK-split) | **56.8–58.4 s ≈ 3.6–3.7K tok/s** (3472 on v3.1 → ~3670 on v3.3 = +5.7% from the QK split; stock kernel: ~170 tok/s — see notes) |
+| KV pool (GPU) | **2,061,355 tokens** = 1.97× a 1M-token request |
 | KV tier 2 — host RAM (LMCache, SHM transport) | 100 GB ≈ **8.7M tokens**; engine restart → prefix back in **2.6 s** per 69K |
 | KV tier 3 — disk (fs adapter) | bounded by free disk; full server+engine restart → 23.8 s per 69K (partial-hit, degrades to recompute) |
 | TTFT (short prompt) | 0.1–0.5 s |
@@ -41,9 +39,9 @@ huggingface-cli download XiaomiMiMo/MiMo-V2.6-Flash-RL --local-dir ~/models/MiMo
 python3 -c "import json; p='$HOME/models/MiMo-V2.6-Flash-RL-official/generation_config.json'; \
 g=json.load(open(p)); g['max_new_tokens']=65536; json.dump(g, open(p,'w'), indent=2)"
 
-# 2. build the v3.1 image (patches baked into the layer, md5-identical
+# 2. build the v3.3 image (patches baked into the layer, md5-identical
 #    to the files the v3.0 launchers bind-mount)
-docker build -f docker/Dockerfile -t vllm-mimo:v3.1 .
+docker build -f docker/Dockerfile -t vllm-mimo:v3.3 .
 
 # 3. launch (starts the CPU-tier server first, then the engine on :8099)
 bash scripts/launch-official-v31.sh
@@ -81,7 +79,7 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 | `patches/fp8.py` + `patches/online_fp8.py` | Route fp8 GEMMs to Marlin W8A16 on sm80 (no native fp8); without this the stock selection falls into a runtime-dequant path that costs 73% decode |
 | `patches/mimo_v2_omni_model.py`, `patches/mimo_v2_omni.py` | ViT attention-sink fix (upstream [vllm#58235](https://github.com/vllm-project/vllm/pull/58235) port — without it the model is color-blind) + processor fixes; optional audio-tower skip at `audio=0` |
 | `patches/triton_attn_diffkv.py` | Split-KV knob for the DiffKV attention verify step (`VLLM_DIFFKV_FULL_ATTN_SEGMENTS=64`) |
-| `patches/triton_unified_attention_diffkv.py` | Spec-3D verify kernel **+ prefill q-tiling** (from the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-DGX-Sparks)). Spec-3D env: `VLLM_DIFFKV_SPEC_3D_MAX_Q`/`_BLOCK_M`/`_NUM_WARPS`/`_TILE`. Prefill q-tiling: `max_seqlen_q >= 64` batches use `BLOCK_M=128` (8 query tokens per program) via `VLLM_DIFFKV_PREFILL_BLOCK_M`/`_TILE`/`_NUM_WARPS` — fixes the long-context chunked-prefill cliff (see below). Upstream: [vllm#59054](https://github.com/vllm-project/vllm/issues/59054) + [PR#59085](https://github.com/vllm-project/vllm/pull/59085) + [backport#110](https://github.com/wtdcode/vllm-backport/pull/110) |
+| `patches/triton_unified_attention_diffkv.py` | Spec-3D verify kernel **+ prefill q-tiling** (from the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-DGX-Sparks)) **+ QK-dot split 192=128+64** ([vllm#59673](https://github.com/vllm-project/vllm/pull/59673) port: the 2D kernel's Q·Kᵀ runs as a 128-wide + 64-wide dot instead of padding to 256 — sm80 kernel 1.10–1.11×, bitwise-identical, E2E 200K prefill +5.7%). Spec-3D env: `VLLM_DIFFKV_SPEC_3D_MAX_Q`/`_BLOCK_M`/`_NUM_WARPS`/`_TILE`. Prefill q-tiling: `max_seqlen_q >= 64` batches use `BLOCK_M=128` (8 query tokens per program) via `VLLM_DIFFKV_PREFILL_BLOCK_M`/`_TILE`/`_NUM_WARPS` — fixes the long-context chunked-prefill cliff (see below). Upstream: [vllm#59054](https://github.com/vllm-project/vllm/issues/59054) + [PR#59085](https://github.com/vllm-project/vllm/pull/59085) + [backport#110](https://github.com/wtdcode/vllm-backport/pull/110) |
 
 All patches are inactive on the NVFP4 track, so both launchers coexist.
 
