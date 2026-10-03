@@ -41,10 +41,15 @@ huggingface-cli download XiaomiMiMo/MiMo-V2.6-Flash-RL --local-dir ~/models/MiMo
 python3 -c "import json; p='$HOME/models/MiMo-V2.6-Flash-RL-official/generation_config.json'; \
 g=json.load(open(p)); g['max_new_tokens']=65536; json.dump(g, open(p,'w'), indent=2)"
 
-# 2. launch (mounts the patches, starts serving on :8099)
-bash scripts/launch-official.sh
+# 2. build the v3.1 image (patches baked into the layer, md5-identical
+#    to the files the v3.0 launchers bind-mount)
+docker build -f docker/Dockerfile -t vllm-mimo:v3.1 .
 
-# 3. verify
+# 3. launch (starts the CPU-tier server first, then the engine on :8099)
+bash scripts/launch-official-v31.sh
+# v3.0 form (bind-mounts patches/ instead): bash scripts/launch-official.sh
+
+# 4. verify
 curl -s http://127.0.0.1:8099/v1/models
 python3 scripts/bench-full.py
 ```
@@ -54,6 +59,8 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 ## Layout
 
 - `scripts/launch-official.sh` — production launcher (official weights; starts the CPU-tier server first, then the engine)
+- `scripts/launch-official-v31.sh` — v3.1 launcher (patches baked into the image; no bind mounts)
+- `docker/Dockerfile` — bakes the eight patches into the image layer (byte-identical to the mounted files)
 - `scripts/lmc-server-cmd.sh` — the CPU-tier server command, mounted as the container entrypoint (inline `-c` JSON quoting is unmanageable — don't inline it back)
 - `scripts/launch-omni.sh` — NVFP4 fallback launcher
 - `scripts/bench-full.py` — decode + prefill benchmark (real token counts)
@@ -77,6 +84,8 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 | `patches/triton_unified_attention_diffkv.py` | Spec-3D verify kernel **+ prefill q-tiling** (from the [MiaAI-Lab recipe](https://github.com/MiaAI-Lab/DeepSeek-v4.1-Flash-DGX-Sparks)). Spec-3D env: `VLLM_DIFFKV_SPEC_3D_MAX_Q`/`_BLOCK_M`/`_NUM_WARPS`/`_TILE`. Prefill q-tiling: `max_seqlen_q >= 64` batches use `BLOCK_M=128` (8 query tokens per program) via `VLLM_DIFFKV_PREFILL_BLOCK_M`/`_TILE`/`_NUM_WARPS` — fixes the long-context chunked-prefill cliff (see below). Upstream: [vllm#59054](https://github.com/vllm-project/vllm/issues/59054) + [PR#59085](https://github.com/vllm-project/vllm/pull/59085) + [backport#110](https://github.com/wtdcode/vllm-backport/pull/110) |
 
 All patches are inactive on the NVFP4 track, so both launchers coexist.
+
+The same eight patches also live as clean commits on [kaka86mm/vllm-backport `mimo-v3-stack`](https://github.com/kaka86mm/vllm-backport/tree/mimo-v3-stack) — three-way-merged onto wtdcode master `29e66dad` (production runtime files kept verbatim; the processor commit drops a leftover diagnostic probe). That branch is the base for future from-source builds; the baked `v3.1` image is the byte-equivalent production artifact.
 
 The CPU/disk tiers run **stock PR#4410 LMCache code** (`lmcache server --chunk-size 8192 --shm-name ... --l2-adapter '{"type":"fs","base_path":"/lmcache-l2"}'`); no local patches in the store/retrieve chain. Chunk size 8192 and SHM transport are both load-bearing: each removes about half of a ~0.55 s per-transfer-object fixed cost that otherwise dominates retrieval on PCIe-constrained hosts (measurements in [LMCache#5440](https://github.com/LMCache/LMCache/issues/5440)).
 
