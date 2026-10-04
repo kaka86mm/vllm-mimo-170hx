@@ -1,6 +1,8 @@
-# v3.1 — the eight runtime bind-mount patches baked into the image layer,
-# byte-identical to the files the v3.0 launchers mount. Build from the repo
-# root:   docker build -f docker/Dockerfile -t vllm-mimo:v3.1 .
+# v3.3 — the eight runtime bind-mount patches baked into the image layer,
+# md5-identical to the files the v3.0 launchers mount. The attention kernel
+# now also carries the vllm#59673 QK-dot split (192 = 128 + 64, no 256-pad;
+# bitwise-identical outputs, sm80 kernel 1.10-1.11x, E2E 200K prefill +5.7%).
+# Build from the repo root:   docker build -f docker/Dockerfile -t vllm-mimo:v3.3 .
 # Base carries the LMCache PR#4410 build (vllm-mimo:lmc-pr4410c lineage).
 FROM vllm-mimo:lmc-pr4410c
 COPY patches/triton_attn_diffkv.py /usr/local/lib/python3.12/dist-packages/vllm/v1/attention/backends/triton_attn_diffkv.py
