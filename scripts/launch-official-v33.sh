@@ -13,15 +13,15 @@
 set -e
 MODEL_DIR=${MODEL_DIR:-/home/matri/models/MiMo-V2.6-Flash-RL-official}
 PORT=${PORT:-8099}
-IMAGE=${IMAGE:-vllm-mimo:v3.3}
+IMAGE=${IMAGE:-vllm-mimo:v3.3-qksplit}
 
 # CPU-tier LMCache server (persistent; PR#4410 build, chunk 8192 / L1 100GB)
 if ! docker ps --format "{{.Names}}" | grep -q "^lmcache-server$"; then
   docker rm -f lmcache-server 2>/dev/null || true
-  mkdir -p /lmcache-l2
+  mkdir -p /home/matri/lmcache-l2
   docker run -d --name lmcache-server --init --restart unless-stopped \
-    --network host --ipc host -v /lmcache-l2:/lmcache-l2 \
-    --entrypoint /cmd.sh -v $(dirname "$0")/../scripts/lmc-server-cmd.sh:/cmd.sh:ro "$IMAGE" \
+    --network host --ipc host -v /home/matri/lmcache-l2:/lmcache-l2 \
+    --entrypoint /cmd.sh -v /home/matri/mimo-v26/lmc-server-cmd.sh:/cmd.sh:ro "$IMAGE" \
     && echo "lmcache-server started (:5555, chunk 8192)"
 fi
 
@@ -41,7 +41,7 @@ docker run -d --name mimo26 --restart unless-stopped \
   --max-model-len 1048576 \
   --max-num-batched-tokens 1024 \
   --trust-remote-code \
-  --kv-cache-memory 17179869184 --gpu-memory-utilization 0.94 \
+  --kv-cache-memory 16642998272 --gpu-memory-utilization 0.94 \
   --max-num-seqs 32 \
   --reasoning-parser mimo --tool-call-parser mimo \
   --enable-auto-tool-choice \

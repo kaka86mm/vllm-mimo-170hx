@@ -39,9 +39,9 @@ huggingface-cli download XiaomiMiMo/MiMo-V2.6-Flash-RL --local-dir ~/models/MiMo
 python3 -c "import json; p='$HOME/models/MiMo-V2.6-Flash-RL-official/generation_config.json'; \
 g=json.load(open(p)); g['max_new_tokens']=65536; json.dump(g, open(p,'w'), indent=2)"
 
-# 2. build the v3.3 image (patches baked into the layer, md5-identical
+# 2. build the v3.5-connfix image (patches baked into the layer, md5-identical
 #    to the files the v3.0 launchers bind-mount)
-docker build -f docker/Dockerfile -t vllm-mimo:v3.3 .
+docker build -f docker/Dockerfile -t vllm-mimo:v3.5-connfix .
 
 # 3. launch (starts the CPU-tier server first, then the engine on :8099)
 bash scripts/launch-official-v33.sh
@@ -57,7 +57,8 @@ Step-by-step bring-up with verification checkpoints and a troubleshooting table 
 ## Layout
 
 - `scripts/launch-official.sh` — production launcher (official weights; starts the CPU-tier server first, then the engine)
-- `scripts/launch-official-v33.sh` — v3.3 launcher (patches baked into the image; no bind mounts)
+- `scripts/launch-official.sh` — production launcher (v3.5-connfix)
+- `scripts/launch-official-v33.sh` — v3.3 launcher (rollback anchor) (patches baked into the image; no bind mounts)
 - `docker/Dockerfile` — bakes the eight patches into the image layer (byte-identical to the mounted files; the attention kernel includes the QK-dot split)
 - `scripts/lmc-server-cmd.sh` — the CPU-tier server command, mounted as the container entrypoint (inline `-c` JSON quoting is unmanageable — don't inline it back)
 - `scripts/launch-omni.sh` — NVFP4 fallback launcher
@@ -114,6 +115,6 @@ The CPU/disk tiers run **stock PR#4410 LMCache code** (`lmcache server --chunk-s
 
 ## 中文摘要
 
-4×CMP 170HX（无 P2P、只能 PP4）上跑 MiMo-V2.6-Flash-RL 全模态的生产部署，现役 **v3.3**（tag `v3.3-prod`）。配置 = 官方 161GB fp8 权重、15.5GiB fp8 KV（层切分 12,12,12,12）、投机解码关闭（长上下文内核悬崖，见英文注意事项）、**三级 KV 存储**（GPU 206 万 token + 内存层 870 万 + 磁盘层）。实测（2026-10-04，v3.3）：单流 greedy 64.5（短）/ 56（67K）tok/s、**16 流聚合 ~480 / 32 流 ~750**、200K 冷 prefill **~3,650 tok/s**（q-tiling 16× + QK-split 再 +5.7%）、**引擎重启零缓存损失（1M-token 前缀 4.6 秒取回）**。文/图/视/音四模态 + 工具调用全部可用。
+4×CMP 170HX（无 P2P、只能 PP4）上跑 MiMo-V2.6-Flash-RL 全模态的生产部署，现役 **v3.5-connfix**（基于 v3.3 + LMCache connector 修复）。配置 = 官方 161GB fp8 权重、15.5GiB fp8 KV（层切分 12,12,12,12）、投机解码关闭（长上下文内核悬崖，见英文注意事项）、**三级 KV 存储**（GPU 206 万 token + 内存层 870 万 + 磁盘层）。实测（2026-10-15，v3.5-connfix，与 v3.3 同指纹）：单流 greedy 64.5（短）/ 56（67K）tok/s、**16 流聚合 ~480 / 32 流 ~750**、200K 冷 prefill **~3,650 tok/s**（q-tiling 16× + QK-split 再 +5.7%）、**引擎重启零缓存损失（1M-token 前缀 4.6 秒取回）**。文/图/视/音四模态 + 工具调用全部可用。
 
-版本演进：v3.0（内核修复+三级存储）→ **v3.1**（八个补丁烘焙进镜像层，md5 等价，挂载时代终结；源头合入 [kaka86mm/vllm-backport `mimo-v3-stack`](https://github.com/kaka86mm/vllm-backport/tree/mimo-v3-stack) 分支）→ **v3.3**（移植上游 [#59673](https://github.com/vllm-project/vllm/pull/59673) QK 点积拆分：192=128+64 免 256 填充，逐位一致，E2E 200K +4~5.7%）。已判负并归档：Humming MoE 后端（W4A16/W4A8 双双劣于 Marlin 栈）、P2P/TP 路线、NVFP4 转轨。磁盘层重启恢复当前受上游 bug 影响（[LMCache#5475](https://github.com/LMCache/LMCache/issues/5475)：per-rank 组负载共享 key 冲突），内存层不受影响。核心坑（官方 QKV 的 NB=4 导出布局、fp8 反量化 -73% decode、滑窗 KV 在途预留、ViT sink 色彩 bug、spec 验证/长上下文 prefill 两条内核悬崖）均已修复并沉淀为镜像内补丁，测量数据同步回馈上游（vllm#59054/#59085/#59673、LMCache#4410/#5440/#5475）。完整工程日志见 `docs/RESULT.md`；NVFP4 回退轨保留在 `launch-omni.sh` / tag `v1.3-prod`。
+版本演进：v3.0（内核修复+三级存储）→ **v3.1**（八个补丁烘焙进镜像层，md5 等价，挂载时代终结；源头合入 [kaka86mm/vllm-backport `mimo-v3-stack`](https://github.com/kaka86mm/vllm-backport/tree/mimo-v3-stack) 分支）→ **v3.3**（移植上游 [#59673](https://github.com/vllm-project/vllm/pull/59673) QK 点积拆分：192=128+64 免 256 填充，逐位一致，E2E 200K +4~5.7%）→ **v3.5-connfix**（移植 LMCache [#5657](https://github.com/LMCache/LMCache/pull/5657) + [#5579](https://github.com/LMCache/LMCache/pull/5579)：abort 请求的 lookup 读锁泄漏、session 生命周期错序；上游测试 A/B 验证 12 通过 / 0 回归，KV 池指纹不变）。已判负并归档：Humming MoE 后端（W4A16/W4A8 双双劣于 Marlin 栈）、P2P/TP 路线、NVFP4 转轨。磁盘层重启恢复当前受上游 bug 影响（[LMCache#5475](https://github.com/LMCache/LMCache/issues/5475)：per-rank 组负载共享 key 冲突），内存层不受影响。核心坑（官方 QKV 的 NB=4 导出布局、fp8 反量化 -73% decode、滑窗 KV 在途预留、ViT sink 色彩 bug、spec 验证/长上下文 prefill 两条内核悬崖）均已修复并沉淀为镜像内补丁，测量数据同步回馈上游（vllm#59054/#59085/#59673、LMCache#4410/#5440/#5475）。完整工程日志见 `docs/RESULT.md`；NVFP4 回退轨保留在 `launch-omni.sh` / tag `v1.3-prod`。
